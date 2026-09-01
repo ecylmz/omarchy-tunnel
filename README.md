@@ -7,7 +7,7 @@ Omarchy Tunnel is intentionally small: it does **not** install a privileged daem
 ## Features
 
 - Native Omarchy bar widget and keyboard-friendly popup panel
-- Import local WireGuard `.conf` / `.wg` files from a file picker
+- Native in-panel browser for local WireGuard `.conf` / `.wg` files — no GTK/native file dialog and no extra picker dependency
 - Connect and disconnect profiles without opening a terminal
 - Multiple WireGuard profiles with active-state indication
 - Remove inactive profiles with a two-step confirmation
@@ -26,6 +26,7 @@ Omarchy plugins run unsandboxed with the permissions of your user account, so yo
 5. **UUID-only mutations.** Connect, disconnect, harden, and delete operations address NetworkManager profiles by validated UUID instead of connection name.
 6. **Import hardening.** After import, the plugin sets `connection.autoconnect=no` and, when `$USER` is available, `connection.permissions=user:$USER`. If this hardening step fails, the plugin attempts to delete the newly imported profile instead of leaving it behind.
 7. **Normal NetworkManager authorization.** If NetworkManager requires authorization, the regular Polkit flow is used. Omarchy Tunnel does not bypass it.
+8. **No in-process native file dialog.** Import browsing stays inside the Omarchy panel with Qt's read-only `FolderListModel`. This keeps GTK/GVFS file chooser code out of the long-running Omarchy shell process and avoids a picker failure taking down the shell.
 
 Because NetworkManager's WireGuard import semantics differ from `wg-quick`, configs that depend on command hooks are deliberately unsupported.
 
@@ -34,6 +35,7 @@ Because NetworkManager's WireGuard import semantics differ from `wg-quick`, conf
 - Omarchy Quattro / Omarchy Shell plugin system
 - NetworkManager with `nmcli` (standard on Omarchy)
 - `awk` (part of the normal Arch/Omarchy base environment)
+- Qt's `Qt.labs.folderlistmodel` module (provided by the Qt declarative stack used by Omarchy Shell)
 
 No AUR package or extra background service is required.
 
@@ -61,20 +63,31 @@ omarchy plugin validate ~/.config/omarchy/plugins/io.github.ecylmz.omarchy-tunne
 - **Left-click** the lock icon to open/close the panel.
 - **Middle-click** the bar icon to refresh.
 - Click a profile or its switch to connect/disconnect.
-- Click **Import configuration** and select a WireGuard `.conf` or `.wg` file.
+- Click **Import configuration** to open the in-panel WireGuard file browser, then select a `.conf` or `.wg` file.
 - Click the remove button twice to delete an inactive profile.
 
-Keyboard controls while the panel is open:
+Keyboard controls on the main panel:
 
 | Key | Action |
 | --- | --- |
 | `↑` / `↓` | Move through profiles and the import action |
 | `Enter` | Toggle the selected profile / open import |
-| `I` | Import configuration |
+| `I` | Open import browser |
 | `R` | Refresh |
 | `D` | Arm/confirm removal for the selected inactive profile |
 | `Tab` / `Shift+Tab` | Switch to the neighbouring Omarchy panel |
 | `Esc` | Close |
+
+Keyboard controls in the import browser:
+
+| Key | Action |
+| --- | --- |
+| `↑` / `↓` | Select a folder or WireGuard file |
+| `Enter` / `→` | Open folder or import selected file |
+| `←` / `H` | Parent folder |
+| `Esc` / `Q` | Return to the main panel |
+
+The import browser starts in your home directory, lists directories plus readable `.conf` / `.wg` files, hides dotfiles, and never reads configuration contents into the UI.
 
 ## Validate during development
 
@@ -104,7 +117,7 @@ omarchy-shell shell summon io.github.ecylmz.omarchy-tunnel '{}'
 omarchy-shell shell hide io.github.ecylmz.omarchy-tunnel
 ```
 
-Before a release, test click, keyboard navigation, import, connect/disconnect, removal, disable/re-enable, shell restart, and plugin removal.
+Before a release, test click, keyboard navigation, folder navigation/import, connect/disconnect, removal, disable/re-enable, shell restart, and plugin removal.
 
 ## Remove
 
