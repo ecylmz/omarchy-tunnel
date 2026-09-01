@@ -32,6 +32,12 @@ Panel {
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property int actionIndex: profiles.length
   readonly property string homeUrl: "file://" + String(Quickshell.env("HOME") || "/")
+  readonly property var activeProfile: {
+    for (var i = 0; i < profiles.length; i++) {
+      if (profiles[i].active) return profiles[i]
+    }
+    return null
+  }
 
   function open() {
     root.controller.show()
@@ -181,6 +187,12 @@ Panel {
     id: tunnel
   }
 
+  TunnelDetails {
+    id: details
+    profile: root.activeProfile
+    pollingEnabled: root.opened && !root.pickerOpen
+  }
+
   FolderListModel {
     id: folderModel
     folder: root.homeUrl
@@ -285,6 +297,19 @@ Panel {
                   font.pixelSize: Style.font.display
                 }
               }
+            }
+
+            Column {
+              visible: details.active
+              width: parent.width
+              spacing: Style.space(4)
+
+              InfoPair { label: "Profile"; value: details.profileName !== "" ? details.profileName : "—" }
+              InfoPair { label: "Interface"; value: details.device !== "" ? details.device : "—" }
+              InfoPair { label: "IP address"; value: details.ipAddress !== "" ? details.ipAddress : "—" }
+              InfoPair { label: "Endpoint"; value: details.endpoint !== "" ? details.endpoint : "—" }
+              InfoPair { label: "Traffic"; value: "↓ " + details.downloadedText + "   ↑ " + details.uploadedText }
+              InfoPair { label: "Rate"; value: "↓ " + details.receivingText + "   ↑ " + details.sendingText }
             }
 
             Text {
