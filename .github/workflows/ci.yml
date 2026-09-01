@@ -27,6 +27,9 @@ jobs:
         run: |
           ! grep -R -nE 'NOPASSWD|sudoers|wg-quick' --include='*.qml' --include='*.js' .
           ! grep -R -nE '(bash|sh)[[:space:]]*,[[:space:]]*"-c"' --include='*.qml' .
+      - name: Keep telemetry local-only
+        run: |
+          ! grep -R -nE '(^|[^[:alnum:]_])(curl|wget)([^[:alnum:]_]|$)' --include='*.qml' --include='*.js' .
       - name: Keep file selection inside the shell panel
         run: |
           ! grep -R -nE 'QtQuick\.Dialogs|FileDialog' --include='*.qml' .
