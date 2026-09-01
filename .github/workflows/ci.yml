@@ -27,3 +27,6 @@ jobs:
         run: |
           ! grep -R -nE 'NOPASSWD|sudoers|wg-quick' --include='*.qml' --include='*.js' .
           ! grep -R -nE '(bash|sh)[[:space:]]*,[[:space:]]*"-c"' --include='*.qml' .
+      - name: Keep file selection inside the shell panel
+        run: |
+          ! grep -R -nE 'QtQuick\.Dialogs|FileDialog' --include='*.qml' .
