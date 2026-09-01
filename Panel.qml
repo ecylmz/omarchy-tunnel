@@ -126,13 +126,19 @@ Panel {
     pickerIndex = 0
   }
 
+  function boundedLocalText(value, limit) {
+    var maximum = Math.max(1, Math.min(Number(limit || 255), 512))
+    var text = String(value || "").replace(/[\x00-\x1f\x7f]/g, "")
+    return text.length > maximum ? text.substring(0, maximum - 1) + "…" : text
+  }
+
   function pickerPathText() {
     var value = String(folderModel.folder || "")
     if (value.indexOf("file://") === 0) value = value.substring(7)
     try { value = decodeURIComponent(value) } catch (e) {}
     var home = String(Quickshell.env("HOME") || "")
     if (home !== "" && value.indexOf(home) === 0) value = "~" + value.substring(home.length)
-    return value === "" ? "/" : value
+    return boundedLocalText(value === "" ? "/" : value, 512)
   }
 
   function scrollPickerCursorIntoView() {
@@ -291,6 +297,7 @@ Panel {
               iconOpacity: tunnel.activeCount > 0 ? 1.0 : 0.55
               iconComponent: Component {
                 Text {
+                  textFormat: Text.PlainText
                   text: tunnel.activeCount > 0 ? "\uf023" : "\uf09c"
                   color: root.foreground
                   font.family: root.fontFamily
@@ -313,6 +320,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               visible: tunnel.actionStatus !== "" || tunnel.lastError !== ""
               width: parent.width
               text: tunnel.actionStatus !== "" ? tunnel.actionStatus : tunnel.lastError
@@ -347,6 +355,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               visible: tunnel.available && root.profiles.length === 0
               width: parent.width
               text: "Import a WireGuard .conf file to get started."
@@ -367,6 +376,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               visible: tunnel.available
               width: parent.width
               text: "No elevated helper. Connections are managed by NetworkManager and authorized through its normal policy."
@@ -390,6 +400,7 @@ Panel {
               fontFamily: root.fontFamily
               iconComponent: Component {
                 Text {
+                  textFormat: Text.PlainText
                   text: "\uf07c"
                   color: root.foreground
                   font.family: root.fontFamily
@@ -421,6 +432,7 @@ Panel {
                 spacing: Style.space(8)
 
                 Text {
+                  textFormat: Text.PlainText
                   text: "\uf060"
                   color: root.foreground
                   font.family: root.fontFamily
@@ -432,6 +444,7 @@ Panel {
                   spacing: Style.space(1)
 
                   Text {
+                    textFormat: Text.PlainText
                     Layout.fillWidth: true
                     text: "Parent folder"
                     color: root.foreground
@@ -441,6 +454,7 @@ Panel {
                   }
 
                   Text {
+                    textFormat: Text.PlainText
                     Layout.fillWidth: true
                     text: root.pickerPathText()
                     color: root.dim
@@ -457,6 +471,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               visible: folderModel.status === FolderListModel.Loading
               width: parent.width
               text: "Loading folder…"
@@ -466,6 +481,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               visible: folderModel.status === FolderListModel.Ready && folderModel.count === 0
               width: parent.width
               text: "No WireGuard .conf or .wg files in this folder."
@@ -490,7 +506,7 @@ Panel {
                   required property bool fileIsDir
                   required property int index
                   width: parent.width
-                  entryName: fileName
+                  entryName: root.boundedLocalText(fileName, 255)
                   entryUrl: fileUrl
                   directory: fileIsDir
                   rowIndex: index
@@ -499,6 +515,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               width: parent.width
               text: "←/H parent · ↑/↓ select · Enter/→ open · Esc/Q cancel"
               color: root.dim
@@ -548,6 +565,7 @@ Panel {
         spacing: Style.space(1)
 
         Text {
+          textFormat: Text.PlainText
           Layout.fillWidth: true
           text: row.profile ? row.profile.name : "WireGuard"
           color: root.foreground
@@ -558,6 +576,7 @@ Panel {
         }
 
         Text {
+          textFormat: Text.PlainText
           Layout.fillWidth: true
           text: !row.profile ? ""
             : row.rowBusy ? (tunnel.actionKind === "up" ? "Connecting…" : tunnel.actionKind === "down" ? "Disconnecting…" : "Removing…")
@@ -618,6 +637,7 @@ Panel {
       spacing: Style.space(8)
 
       Text {
+        textFormat: Text.PlainText
         text: "+"
         color: root.foreground
         font.family: root.fontFamily
@@ -630,6 +650,7 @@ Panel {
         spacing: Style.space(1)
 
         Text {
+          textFormat: Text.PlainText
           Layout.fillWidth: true
           text: "Import configuration"
           color: root.foreground
@@ -639,6 +660,7 @@ Panel {
         }
 
         Text {
+          textFormat: Text.PlainText
           Layout.fillWidth: true
           text: "WireGuard .conf or .wg"
           color: root.dim
@@ -695,6 +717,7 @@ Panel {
       spacing: Style.space(8)
 
       Text {
+        textFormat: Text.PlainText
         text: pickerRow.directory ? "\uf07b" : "\uf15b"
         color: root.foreground
         font.family: root.fontFamily
@@ -707,6 +730,7 @@ Panel {
         spacing: Style.space(1)
 
         Text {
+          textFormat: Text.PlainText
           Layout.fillWidth: true
           text: pickerRow.entryName
           color: root.foreground
@@ -716,6 +740,7 @@ Panel {
         }
 
         Text {
+          textFormat: Text.PlainText
           Layout.fillWidth: true
           text: pickerRow.directory ? "Folder" : "WireGuard configuration"
           color: root.dim
@@ -726,6 +751,7 @@ Panel {
       }
 
       Text {
+        textFormat: Text.PlainText
         visible: pickerRow.directory
         text: "\uf054"
         color: root.dim

@@ -27,7 +27,7 @@ It works without an elevated helper or an extra background service.
 
 - Omarchy Quattro
 - NetworkManager with `nmcli`
-- `awk`, `cat`, and `env` from the standard Omarchy base system
+- Python 3 and `cat` from the standard Omarchy base system
 - Qt's `Qt.labs.folderlistmodel` module, included with Omarchy's Qt stack
 
 No AUR package or additional service is required.
@@ -54,6 +54,16 @@ Omarchy plugins run unsandboxed with your user permissions. Review the source be
 Omarchy Tunnel delegates connection management and authorization to NetworkManager and Polkit. It does not install sudoers rules, call `wg-quick`, or send telemetry to third-party services. Imported profiles are restricted to the current user and have autoconnect disabled.
 
 WireGuard configurations containing `PreUp`, `PostUp`, `PreDown`, or `PostDown` command hooks are rejected and unsupported.
+
+Imports are limited to regular, non-symlink files of at most 64 KiB. The selected inode is copied to a private temporary file, and that exact copy is both validated and imported. Every external process has byte and wall-clock limits. The UUID returned by NetworkManager's import operation is verified before the new profile is restricted to the current user, disabled for autoconnect, and left inactive; a failed or unprovable transaction triggers rollback.
+
+## Tests
+
+```sh
+tests/run.sh
+```
+
+The suite includes path-replacement, symlink, FIFO, oversized-input, hook, ambiguous-identity, output-flood, and stalled-process cases.
 
 ## Remove
 

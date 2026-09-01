@@ -19,14 +19,17 @@ jobs:
         run: node -e 'const fs=require("fs"); const m=JSON.parse(fs.readFileSync("manifest.json","utf8")); const req=["schemaVersion","id","name","version","author","kinds","entryPoints"]; for (const k of req) if (m[k] === undefined) throw new Error(`missing ${k}`); if (m.id.startsWith("omarchy.")) throw new Error("reserved plugin id"); if (!m.entryPoints.barWidget) throw new Error("missing barWidget entry point"); if (!fs.existsSync(m.entryPoints.barWidget)) throw new Error("barWidget entry point not found");'
       - name: Reject repository symlinks
         run: test -z "$(find . -type l -print -quit)"
-      - name: Validate lint harness syntax
-        run: bash -n tests/lint.sh
+      - name: Validate test harness syntax
+        run: bash -n tests/lint.sh tests/run.sh
       - name: Run model tests
         run: node tests/model.test.js
+      - name: Run adversarial import tests
+        run: python3 -B -m unittest -v tests/helper_test.py
       - name: Check security invariants
         run: |
           ! grep -R -nE 'NOPASSWD|sudoers|wg-quick' --include='*.qml' --include='*.js' .
           ! grep -R -nE '(bash|sh)[[:space:]]*,[[:space:]]*"-c"' --include='*.qml' .
+          ! grep -R -nE 'shell[[:space:]]*=[[:space:]]*True|os\.system\(' --include='*.py' .
       - name: Keep telemetry local-only
         run: |
           ! grep -R -nE '(^|[^[:alnum:]_])(curl|wget)([^[:alnum:]_]|$)' --include='*.qml' --include='*.js' .

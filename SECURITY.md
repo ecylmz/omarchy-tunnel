@@ -13,9 +13,12 @@ Changes should preserve these invariants:
 - Never pass user-controlled values through `bash -c`, `sh -c`, `eval`, or equivalent shell interpolation.
 - Use validated NetworkManager UUIDs for profile mutations.
 - Do not print, persist, or expose imported configuration contents or WireGuard private keys.
-- Reject wg-quick command hooks (`PreUp`, `PostUp`, `PreDown`, `PostDown`) before import.
+- Open imports with no symlink following, require a regular file, enforce the 64 KiB ceiling while copying, and validate/import the same private temporary copy.
+- Reject wg-quick command hooks (`PreUp`, `PostUp`, `PreDown`, `PostDown`) in that exact copy before import.
+- Bound retained child stdout/stderr and give every external process an outer deadline.
+- Identify a new profile from the import operation's UUID and verify its UUID/type before every mutation or rollback action.
 - Let NetworkManager/Polkit own authorization decisions.
-- If post-import hardening fails, prefer rollback over leaving an unexpectedly permissive profile.
+- If import identity or post-import hardening cannot be proven, deactivate/restrict and remove transaction candidates instead of leaving an unexpectedly permissive profile.
 
 ## Reporting a vulnerability
 

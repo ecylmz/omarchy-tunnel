@@ -15,31 +15,32 @@ Item {
   property string actionStatus: ""
   property string lastError: ""
   property string pendingImportPath: ""
-  property var preImportUuids: []
-  property string importedUuid: ""
   property bool importing: false
 
+  readonly property string helperPath: localPath(Qt.resolvedUrl("scripts/omarchy-tunnel-helper.py"))
   readonly property int activeCount: {
     var count = 0
     for (var i = 0; i < profiles.length; i++) if (profiles[i].active) count += 1
     return count
   }
-  readonly property bool busy: refreshing || actionProcess.running || validatorProcess.running ||
-    importProcess.running || discoverProcess.running || hardenProcess.running ||
-    settleImportProcess.running || rollbackProcess.running
+  readonly property bool busy: refreshing || actionProcess.running || importProcess.running
 
-  readonly property string validatorProgram:
-    'BEGIN { has_interface=0; has_peer=0; bad_hook=0 } ' +
-    '{ line=tolower($0); ' +
-    'if (line ~ /^[[:space:]]*\\[interface\\][[:space:]]*$/) has_interface=1; ' +
-    'if (line ~ /^[[:space:]]*\\[peer\\][[:space:]]*$/) has_peer=1; ' +
-    'if (line ~ /^[[:space:]]*(preup|postup|predown|postdown)[[:space:]]*=/) bad_hook=1 } ' +
-    'END { if (bad_hook) exit 20; if (!has_interface) exit 21; if (!has_peer) exit 22; exit 0 }'
+  function boundedCommand(command, timeoutMs, stdoutLimit, stderrLimit) {
+    var wrapped = [
+      "python3", helperPath, "run",
+      "--timeout-ms", String(timeoutMs),
+      "--stdout-limit", String(stdoutLimit),
+      "--stderr-limit", String(stderrLimit),
+      "--"
+    ]
+    for (var i = 0; i < command.length; i++) wrapped.push(command[i])
+    return wrapped
+  }
 
-  function nmcli(args) {
-    var command = ["env", "LC_ALL=C", "nmcli", "--colors", "no"]
+  function nmcli(args, timeoutMs, stdoutLimit, stderrLimit) {
+    var command = ["nmcli", "--colors", "no"]
     for (var i = 0; i < args.length; i++) command.push(args[i])
-    return command
+    return boundedCommand(command, timeoutMs, stdoutLimit, stderrLimit)
   }
 
   function profileByUuid(uuid) {
@@ -50,23 +51,25 @@ Item {
   }
 
   function flash(message) {
-    actionStatus = String(message || "")
+    actionStatus = Model.boundedDisplayText(message, 180)
     statusTimer.restart()
   }
 
   function fail(message) {
-    lastError = String(message || "Operation failed")
+    lastError = Model.boundedDisplayText(message || "Operation failed", 240)
     actionStatus = ""
   }
 
   function refresh() {
-    if (refreshProcess.running || discoverProcess.running) return
+    if (refreshProcess.running) return
     refreshing = true
+    refreshProcess.timedOut = false
+    refreshProcess.awaitingExit = true
     refreshProcess.command = nmcli([
       "--terse", "--escape", "yes",
       "--fields", "NAME,UUID,TYPE,DEVICE",
       "connection", "show"
-    ])
+    ], 8000, 65536, 8192)
     refreshProcess.running = true
   }
 
@@ -77,23 +80,27 @@ Item {
   }
 
   function runProfileAction(kind, uuid) {
-    if (!Model.isUuid(uuid) || actionProcess.running) return
+    if (!Model.isUuid(uuid) || actionProcess.running || importing) return
     actionKind = kind
     busyUuid = uuid
     lastError = ""
     actionStatus = kind === "up" ? "Connecting…" : kind === "down" ? "Disconnecting…" : "Removing…"
 
+    var args
     if (kind === "up") {
-      actionProcess.command = nmcli(["--wait", "20", "connection", "up", "uuid", uuid])
+      args = ["--wait", "20", "connection", "up", "uuid", uuid]
     } else if (kind === "down") {
-      actionProcess.command = nmcli(["--wait", "20", "connection", "down", "uuid", uuid])
+      args = ["--wait", "20", "connection", "down", "uuid", uuid]
     } else if (kind === "delete") {
-      actionProcess.command = nmcli(["--wait", "20", "connection", "delete", "uuid", uuid])
+      args = ["--wait", "20", "connection", "delete", "uuid", uuid]
     } else {
       busyUuid = ""
       actionKind = ""
       return
     }
+    actionProcess.timedOut = false
+    actionProcess.awaitingExit = true
+    actionProcess.command = nmcli(args, 24000, 4096, 4096)
     actionProcess.running = true
   }
 
@@ -125,57 +132,18 @@ Item {
       return
     }
     pendingImportPath = path
-    lastError = ""
-    actionStatus = "Checking configuration…"
-    validatorProcess.command = ["awk", validatorProgram, path]
-    validatorProcess.running = true
-  }
-
-  function startImport() {
-    preImportUuids = []
-    for (var i = 0; i < profiles.length; i++) preImportUuids.push(profiles[i].uuid)
     importing = true
-    actionStatus = "Importing WireGuard profile…"
-    importProcess.command = nmcli([
-      "--wait", "20", "connection", "import",
-      "type", "wireguard", "file", pendingImportPath
-    ])
+    lastError = ""
+    actionStatus = "Validating and securing import…"
+    importProcess.timedOut = false
+    importProcess.awaitingExit = true
+    importProcess.command = ["python3", helperPath, "import", pendingImportPath]
     importProcess.running = true
   }
 
-  function discoverImportedProfile() {
-    discoverProcess.command = nmcli([
-      "--terse", "--escape", "yes",
-      "--fields", "NAME,UUID,TYPE,DEVICE",
-      "connection", "show"
-    ])
-    discoverProcess.running = true
-  }
-
-  function hardenImportedProfile(uuid) {
-    importedUuid = uuid
-    var user = String(Quickshell.env("USER") || "")
-    var args = ["--wait", "20", "connection", "modify", "uuid", uuid,
-                "connection.autoconnect", "no"]
-    if (user !== "") {
-      args.push("connection.permissions")
-      args.push("user:" + user)
-    }
-    actionStatus = "Securing imported profile…"
-    hardenProcess.command = nmcli(args)
-    hardenProcess.running = true
-  }
-
-  function rollbackImport(reason) {
-    lastError = reason
-    actionStatus = "Rolling back import…"
-    if (!Model.isUuid(importedUuid)) {
-      importing = false
-      refresh()
-      return
-    }
-    rollbackProcess.command = nmcli(["--wait", "20", "connection", "delete", "uuid", importedUuid])
-    rollbackProcess.running = true
+  function finishImportState() {
+    importing = false
+    pendingImportPath = ""
   }
 
   Timer {
@@ -201,13 +169,73 @@ Item {
     onTriggered: root.actionStatus = ""
   }
 
+  Timer {
+    interval: 12000
+    repeat: false
+    running: refreshProcess.running
+    onTriggered: {
+      refreshProcess.timedOut = true
+      refreshProcess.awaitingExit = false
+      refreshProcess.running = false
+      root.refreshing = false
+      root.probed = true
+      root.available = false
+      root.profiles = []
+      root.fail("NetworkManager refresh timed out")
+    }
+  }
+
+  Timer {
+    interval: 28000
+    repeat: false
+    running: actionProcess.running
+    onTriggered: {
+      actionProcess.timedOut = true
+      actionProcess.awaitingExit = false
+      actionProcess.running = false
+      root.busyUuid = ""
+      root.actionKind = ""
+      root.fail("NetworkManager operation timed out")
+      delayedRefresh.restart()
+    }
+  }
+
+  Timer {
+    interval: 52000
+    repeat: false
+    running: importProcess.running
+    onTriggered: {
+      importProcess.timedOut = true
+      importProcess.awaitingExit = false
+      importProcess.running = false
+      root.finishImportState()
+      root.fail("WireGuard import timed out; recovery was requested")
+      delayedRefresh.restart()
+    }
+  }
+
   Process {
     id: refreshProcess
+    property bool timedOut: false
+    property bool awaitingExit: false
     running: false
     command: []
+    // The helper enforces these byte ceilings before either collector sees data.
     stdout: StdioCollector { id: refreshStdout; waitForEnd: true }
     stderr: StdioCollector { id: refreshStderr; waitForEnd: true }
+    onRunningChanged: if (!running && awaitingExit) Qt.callLater(function() {
+      if (!refreshProcess.running && refreshProcess.awaitingExit) {
+        refreshProcess.awaitingExit = false
+        root.refreshing = false
+        root.probed = true
+        root.available = false
+        root.profiles = []
+        root.fail("NetworkManager refresh ended unexpectedly")
+      }
+    })
     onExited: function(exitCode) {
+      awaitingExit = false
+      if (timedOut) return
       root.refreshing = false
       root.probed = true
       if (exitCode !== 0) {
@@ -216,19 +244,39 @@ Item {
         root.lastError = Model.cleanError(refreshStderr.text, "NetworkManager is unavailable")
         return
       }
+      var parsed = Model.parseProfiles(refreshStdout.text)
+      if (!parsed.ok) {
+        root.available = false
+        root.profiles = []
+        root.fail(parsed.error)
+        return
+      }
       root.available = true
       root.lastError = ""
-      root.profiles = Model.parseProfiles(refreshStdout.text)
+      root.profiles = parsed.profiles
     }
   }
 
   Process {
     id: actionProcess
+    property bool timedOut: false
+    property bool awaitingExit: false
     running: false
     command: []
     stdout: StdioCollector { id: actionStdout; waitForEnd: true }
     stderr: StdioCollector { id: actionStderr; waitForEnd: true }
+    onRunningChanged: if (!running && awaitingExit) Qt.callLater(function() {
+      if (!actionProcess.running && actionProcess.awaitingExit) {
+        actionProcess.awaitingExit = false
+        root.busyUuid = ""
+        root.actionKind = ""
+        root.fail("NetworkManager operation ended unexpectedly")
+        delayedRefresh.restart()
+      }
+    })
     onExited: function(exitCode) {
+      awaitingExit = false
+      if (timedOut) return
       if (exitCode !== 0) {
         root.fail(Model.cleanError(actionStderr.text || actionStdout.text, "NetworkManager operation failed"))
       } else {
@@ -242,121 +290,34 @@ Item {
   }
 
   Process {
-    id: validatorProcess
-    running: false
-    command: []
-    onExited: function(exitCode) {
-      if (exitCode === 0) {
-        root.startImport()
-      } else if (exitCode === 20) {
-        root.fail("Config rejected: PreUp/PostUp/PreDown/PostDown hooks are not allowed")
-      } else if (exitCode === 21) {
-        root.fail("Config rejected: missing [Interface] section")
-      } else if (exitCode === 22) {
-        root.fail("Config rejected: missing [Peer] section")
-      } else {
-        root.fail("Could not read the selected configuration")
-      }
-    }
-  }
-
-  Process {
     id: importProcess
+    property bool timedOut: false
+    property bool awaitingExit: false
     running: false
     command: []
+    // Import emits only "OK:<uuid>" or one <=512-byte sanitized error line.
     stdout: StdioCollector { id: importStdout; waitForEnd: true }
     stderr: StdioCollector { id: importStderr; waitForEnd: true }
+    onRunningChanged: if (!running && awaitingExit) Qt.callLater(function() {
+      if (!importProcess.running && importProcess.awaitingExit) {
+        importProcess.awaitingExit = false
+        root.finishImportState()
+        root.fail("WireGuard import ended unexpectedly; recovery was requested")
+        delayedRefresh.restart()
+      }
+    })
     onExited: function(exitCode) {
-      if (exitCode !== 0) {
-        root.importing = false
-        root.fail(Model.cleanError(importStderr.text || importStdout.text, "WireGuard import failed"))
+      awaitingExit = false
+      if (timedOut) return
+      root.finishImportState()
+      var uuid = Model.parseImportResult(importStdout.text)
+      if (exitCode !== 0 || !uuid) {
+        root.fail(Model.cleanError(importStderr.text || importStdout.text, "WireGuard import failed safely"))
         delayedRefresh.restart()
         return
       }
-      root.discoverImportedProfile()
-    }
-  }
-
-  Process {
-    id: discoverProcess
-    running: false
-    command: []
-    stdout: StdioCollector { id: discoverStdout; waitForEnd: true }
-    stderr: StdioCollector { id: discoverStderr; waitForEnd: true }
-    onExited: function(exitCode) {
-      if (exitCode !== 0) {
-        root.importing = false
-        root.fail("Profile imported, but it could not be identified for hardening")
-        delayedRefresh.restart()
-        return
-      }
-      var rows = Model.parseProfiles(discoverStdout.text)
-      var fresh = Model.findNewProfile(root.preImportUuids, rows)
-      if (!fresh) {
-        root.profiles = rows
-        root.importing = false
-        root.fail("Profile imported, but the new profile could not be identified safely")
-        return
-      }
-      root.profiles = rows
-      root.hardenImportedProfile(fresh.uuid)
-    }
-  }
-
-  Process {
-    id: hardenProcess
-    running: false
-    command: []
-    stdout: StdioCollector { id: hardenStdout; waitForEnd: true }
-    stderr: StdioCollector { id: hardenStderr; waitForEnd: true }
-    onExited: function(exitCode) {
-      if (exitCode !== 0) {
-        root.rollbackImport("Import hardening failed; the new profile is being removed")
-        return
-      }
-      root.actionStatus = "Finishing import…"
-      settleImportProcess.command = root.nmcli(["--wait", "10", "connection", "down", "uuid", root.importedUuid])
-      settleImportProcess.running = true
-    }
-  }
-
-  Process {
-    id: settleImportProcess
-    running: false
-    command: []
-    stdout: StdioCollector { id: settleStdout; waitForEnd: true }
-    stderr: StdioCollector { id: settleStderr; waitForEnd: true }
-    onExited: function(exitCode) {
-      // An inactive profile makes `nmcli connection down` return non-zero; that
-      // is already the desired post-import state, so both outcomes are safe.
-      root.importing = false
-      root.pendingImportPath = ""
-      root.preImportUuids = []
-      root.importedUuid = ""
       root.lastError = ""
       root.flash("WireGuard profile imported")
-      delayedRefresh.restart()
-    }
-  }
-
-  Process {
-    id: rollbackProcess
-    running: false
-    command: []
-    stdout: StdioCollector { id: rollbackStdout; waitForEnd: true }
-    stderr: StdioCollector { id: rollbackStderr; waitForEnd: true }
-    onExited: function(exitCode) {
-      root.importing = false
-      root.pendingImportPath = ""
-      root.preImportUuids = []
-      if (exitCode === 0) {
-        root.importedUuid = ""
-        root.fail("Import was rolled back because the profile could not be hardened")
-      } else {
-        var uuid = root.importedUuid
-        root.importedUuid = ""
-        root.fail("Security hardening failed and rollback also failed. Remove profile " + uuid + " manually with nmcli.")
-      }
       delayedRefresh.restart()
     }
   }

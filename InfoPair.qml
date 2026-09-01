@@ -12,6 +12,7 @@ RowLayout {
   spacing: Style.space(10)
 
   Text {
+    textFormat: Text.PlainText
     Layout.preferredWidth: Style.space(92)
     text: root.label
     color: Qt.darker(Color.foreground, 1.55)
@@ -21,6 +22,7 @@ RowLayout {
   }
 
   Text {
+    textFormat: Text.PlainText
     Layout.fillWidth: true
     text: root.value
     color: Color.foreground
