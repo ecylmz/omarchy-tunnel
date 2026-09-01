@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.ecylmz.omarchy-tunnel",
+  "name": "Omarchy Tunnel",
+  "version": "0.1.0",
+  "author": "Emre Can Yılmaz",
+  "license": "MIT",
+  "description": "A native Omarchy bar panel for safely importing and managing WireGuard connections through NetworkManager.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Omarchy Tunnel",
+    "description": "Import WireGuard configs and connect or disconnect them from the Omarchy bar.",
+    "category": "Network",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
