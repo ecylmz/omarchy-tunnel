@@ -1,0 +1,120 @@
+# Omarchy Tunnel
+
+A native Omarchy Quattro bar plugin for importing and managing WireGuard connections through NetworkManager.
+
+Omarchy Tunnel is intentionally small: it does **not** install a privileged daemon, add sudoers rules, or call `wg-quick` as root. It delegates connection storage and activation to NetworkManager, which is already the network stack used by Omarchy.
+
+## Features
+
+- Native Omarchy bar widget and keyboard-friendly popup panel
+- Import local WireGuard `.conf` / `.wg` files from a file picker
+- Connect and disconnect profiles without opening a terminal
+- Multiple WireGuard profiles with active-state indication
+- Remove inactive profiles with a two-step confirmation
+- Automatic refresh plus manual refresh with middle-click or `R`
+- Secure-by-default import hardening: autoconnect is disabled and the imported profile is restricted to the current user
+- No passwordless sudo and no custom privileged helper
+
+## Security model
+
+Omarchy plugins run unsandboxed with the permissions of your user account, so you should review any plugin before enabling it. Omarchy Tunnel keeps its privileged surface deliberately narrow:
+
+1. **No `sudoers` changes.** The plugin never grants passwordless root commands.
+2. **No `wg-quick`.** VPN profiles are imported with NetworkManager (`nmcli connection import type wireguard`). NetworkManager's WireGuard importer does not execute wg-quick `PreUp`, `PostUp`, `PreDown`, or `PostDown` hooks.
+3. **Hooks are rejected anyway.** Before import, an unprivileged `awk` process checks the selected file and rejects those four command hooks. The validator never prints the file contents, so the WireGuard private key is not copied into QML state or logs.
+4. **No shell interpolation.** Paths, UUIDs, and actions are passed as argv arrays to `Process`; user-controlled values are never concatenated into `bash -c` or another shell command.
+5. **UUID-only mutations.** Connect, disconnect, harden, and delete operations address NetworkManager profiles by validated UUID instead of connection name.
+6. **Import hardening.** After import, the plugin sets `connection.autoconnect=no` and, when `$USER` is available, `connection.permissions=user:$USER`. If this hardening step fails, the plugin attempts to delete the newly imported profile instead of leaving it behind.
+7. **Normal NetworkManager authorization.** If NetworkManager requires authorization, the regular Polkit flow is used. Omarchy Tunnel does not bypass it.
+
+Because NetworkManager's WireGuard import semantics differ from `wg-quick`, configs that depend on command hooks are deliberately unsupported.
+
+## Requirements
+
+- Omarchy Quattro / Omarchy Shell plugin system
+- NetworkManager with `nmcli` (standard on Omarchy)
+- `awk` (part of the normal Arch/Omarchy base environment)
+
+No AUR package or extra background service is required.
+
+## Install
+
+```sh
+omarchy plugin add https://github.com/ecylmz/omarchy-tunnel.git --enable
+```
+
+The plugin ID is:
+
+```text
+io.github.ecylmz.omarchy-tunnel
+```
+
+If you want to inspect it before enabling:
+
+```sh
+omarchy plugin add https://github.com/ecylmz/omarchy-tunnel.git
+omarchy plugin validate ~/.config/omarchy/plugins/io.github.ecylmz.omarchy-tunnel
+```
+
+## Usage
+
+- **Left-click** the lock icon to open/close the panel.
+- **Middle-click** the bar icon to refresh.
+- Click a profile or its switch to connect/disconnect.
+- Click **Import configuration** and select a WireGuard `.conf` or `.wg` file.
+- Click the remove button twice to delete an inactive profile.
+
+Keyboard controls while the panel is open:
+
+| Key | Action |
+| --- | --- |
+| `↑` / `↓` | Move through profiles and the import action |
+| `Enter` | Toggle the selected profile / open import |
+| `I` | Import configuration |
+| `R` | Refresh |
+| `D` | Arm/confirm removal for the selected inactive profile |
+| `Tab` / `Shift+Tab` | Switch to the neighbouring Omarchy panel |
+| `Esc` | Close |
+
+## Validate during development
+
+The official Omarchy development guide recommends validating both the manifest and QML files:
+
+```sh
+PLUGIN_DIR="$HOME/.config/omarchy/plugins/io.github.ecylmz.omarchy-tunnel"
+
+omarchy plugin validate "$PLUGIN_DIR"
+qmllint -I "$OMARCHY_PATH/shell" \
+  "$PLUGIN_DIR/BarWidget.qml" \
+  "$PLUGIN_DIR/Panel.qml" \
+  "$PLUGIN_DIR/Service.qml"
+```
+
+Then exercise the panel lifecycle:
+
+```sh
+omarchy-shell shell summon io.github.ecylmz.omarchy-tunnel '{}'
+omarchy-shell shell hide io.github.ecylmz.omarchy-tunnel
+```
+
+Before a release, test click, keyboard navigation, import, connect/disconnect, removal, disable/re-enable, shell restart, and plugin removal.
+
+## Remove
+
+```sh
+omarchy plugin remove io.github.ecylmz.omarchy-tunnel
+```
+
+Removing the plugin does **not** delete NetworkManager WireGuard profiles that you imported. This is intentional: removing UI code should not silently delete network credentials or configuration. Remove profiles from the panel before uninstalling, or use `nmcli connection delete uuid <UUID>` afterward.
+
+## Development references
+
+The implementation follows the Omarchy Quattro plugin contract: a namespaced third-party `bar-widget` manifest at the repository root, `BarWidget.qml` as the entry point, and a nested `Panel.qml` using the shell's standard panel lifecycle.
+
+- Omarchy plugin development guide: https://plugins.omarchy.org/develop.html
+- Omarchy shell plugin reference: https://github.com/basecamp/omarchy/blob/quattro/shell/README.md
+- NetworkManager WireGuard import background: https://blogs.gnome.org/thaller/2019/03/15/wireguard-in-networkmanager/
+
+## License
+
+MIT
