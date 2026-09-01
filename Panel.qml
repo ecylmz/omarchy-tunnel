@@ -2,8 +2,8 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Dialogs
 import QtQuick.Layouts
+import Qt.labs.folderlistmodel
 import Quickshell
 import qs.Commons
 import qs.Ui
@@ -18,6 +18,8 @@ Panel {
   property int cursorIndex: 0
   property bool cursorActive: false
   property string pendingDeleteUuid: ""
+  property bool pickerOpen: false
+  property int pickerIndex: 0
 
   readonly property int activeCount: tunnel.activeCount
   readonly property bool available: tunnel.available
@@ -29,12 +31,14 @@ Panel {
   readonly property color selectedFill: bar ? Style.selectedFillFor(bar.foreground, Color.accent) : "transparent"
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property int actionIndex: profiles.length
+  readonly property string homeUrl: "file://" + String(Quickshell.env("HOME") || "/")
 
   function open() {
     root.controller.show()
   }
 
   function close() {
+    root.pickerOpen = false
     root.controller.hide()
   }
 
@@ -66,11 +70,81 @@ Panel {
   function activateCursor() {
     if (!cursorActive) return
     if (cursorIndex === actionIndex) {
-      importDialog.open()
+      openPicker()
       return
     }
     var profile = profiles[cursorIndex]
     if (profile) tunnel.toggleProfile(profile.uuid)
+  }
+
+  function openPicker() {
+    if (tunnel.busy) return
+    pendingDeleteUuid = ""
+    pickerIndex = 0
+    pickerOpen = true
+    folderModel.folder = root.homeUrl
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function closePicker() {
+    pickerOpen = false
+    pickerIndex = 0
+    cursorActive = true
+    cursorIndex = actionIndex
+  }
+
+  function pickerMove(dy) {
+    if (dy === 0 || folderModel.count === 0) return
+    cursorActive = true
+    pickerIndex = Math.max(0, Math.min(folderModel.count - 1, pickerIndex + dy))
+    scrollPickerCursorIntoView()
+  }
+
+  function pickerActivate() {
+    if (folderModel.count === 0 || pickerIndex < 0 || pickerIndex >= folderModel.count) return
+    var entryUrl = folderModel.get(pickerIndex, "fileUrl")
+    if (folderModel.isFolder(pickerIndex)) {
+      folderModel.folder = entryUrl
+      pickerIndex = 0
+      return
+    }
+    pickerOpen = false
+    tunnel.importConfig(entryUrl)
+  }
+
+  function pickerGoParent() {
+    var current = String(folderModel.folder)
+    var parent = String(folderModel.parentFolder)
+    if (parent === "" || parent === current) return
+    folderModel.folder = folderModel.parentFolder
+    pickerIndex = 0
+  }
+
+  function pickerPathText() {
+    var value = String(folderModel.folder || "")
+    if (value.indexOf("file://") === 0) value = value.substring(7)
+    try { value = decodeURIComponent(value) } catch (e) {}
+    var home = String(Quickshell.env("HOME") || "")
+    if (home !== "" && value.indexOf(home) === 0) value = "~" + value.substring(home.length)
+    return value === "" ? "/" : value
+  }
+
+  function scrollPickerCursorIntoView() {
+    if (!pickerColumn || pickerIndex < 0 || pickerIndex >= pickerColumn.children.length) return
+    var item = pickerColumn.children[pickerIndex]
+    if (!item) return
+    Qt.callLater(function() {
+      if (!item || !panelFlick) return
+      var point = item.mapToItem(panelFlick.contentItem, 0, 0)
+      var top = point.y
+      var bottom = top + item.height
+      var margin = Style.space(6)
+      var viewTop = panelFlick.contentY
+      var viewBottom = viewTop + panelFlick.height
+      var maxY = Math.max(0, panelFlick.contentHeight - panelFlick.height)
+      if (top < viewTop + margin) panelFlick.contentY = Math.max(0, top - margin)
+      else if (bottom > viewBottom - margin) panelFlick.contentY = Math.min(maxY, bottom + margin - panelFlick.height)
+    })
   }
 
   function requestDelete(uuid) {
@@ -93,6 +167,8 @@ Panel {
     cursorActive = false
     cursorIndex = 0
     pendingDeleteUuid = ""
+    pickerOpen = false
+    pickerIndex = 0
     tunnel.refresh()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
@@ -105,12 +181,21 @@ Panel {
     id: tunnel
   }
 
-  FileDialog {
-    id: importDialog
-    title: "Import WireGuard configuration"
-    fileMode: FileDialog.OpenFile
-    nameFilters: ["WireGuard configuration (*.conf *.wg)", "All files (*)"]
-    onAccepted: tunnel.importConfig(selectedFile)
+  FolderListModel {
+    id: folderModel
+    folder: root.homeUrl
+    nameFilters: ["*.conf", "*.wg"]
+    showDirs: true
+    showDirsFirst: true
+    showDotAndDotDot: false
+    showFiles: true
+    showHidden: false
+    showOnlyReadable: true
+    sortField: FolderListModel.Name
+    onStatusChanged: if (status === FolderListModel.Ready) {
+      root.pickerIndex = count === 0 ? 0 : Math.min(root.pickerIndex, count - 1)
+      if (panelFlick) panelFlick.contentY = 0
+    }
   }
 
   KeyboardPanel {
@@ -120,18 +205,39 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(380))
+    contentWidth: panel.fittedContentWidth(Style.space(400))
     contentHeight: panel.fittedContentHeight(content.implicitHeight, Style.space(560))
 
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      onMoveRequested: function(dx, dy) { root.moveCursor(dy) }
-      onActivateRequested: root.activateCursor()
-      onCloseRequested: root.close()
-      onTabRequested: function(direction) { root.switchPanel(direction) }
+      onMoveRequested: function(dx, dy) {
+        if (root.pickerOpen) {
+          if (dx < 0) root.pickerGoParent()
+          else if (dx > 0) root.pickerActivate()
+          else root.pickerMove(dy)
+        } else {
+          root.moveCursor(dy)
+        }
+      }
+      onActivateRequested: {
+        if (root.pickerOpen) root.pickerActivate()
+        else root.activateCursor()
+      }
+      onCloseRequested: {
+        if (root.pickerOpen) root.closePicker()
+        else root.close()
+      }
+      onTabRequested: function(direction) {
+        if (!root.pickerOpen) root.switchPanel(direction)
+      }
       onTextKey: function(t) {
-        if (t === "i" || t === "I") importDialog.open()
+        if (root.pickerOpen) {
+          if (t === "h" || t === "H") root.pickerGoParent()
+          else if (t === "q" || t === "Q") root.closePicker()
+          return
+        }
+        if (t === "i" || t === "I") root.openPicker()
         else if (t === "r" || t === "R") tunnel.refresh()
         else if ((t === "d" || t === "D") && root.cursorIndex < root.profiles.length) {
           var profile = root.profiles[root.cursorIndex]
@@ -140,6 +246,7 @@ Panel {
       }
 
       Flickable {
+        id: panelFlick
         anchors.fill: parent
         contentWidth: width
         contentHeight: content.implicitHeight
@@ -151,92 +258,229 @@ Panel {
 
         Column {
           id: content
-          width: parent.width
+          width: panelFlick.width
           spacing: Style.space(12)
 
-          PanelHero {
+          Column {
+            visible: !root.pickerOpen
             width: parent.width
-            title: "Omarchy Tunnel"
-            meta: !tunnel.probed ? "Checking NetworkManager…"
-              : !tunnel.available ? "NetworkManager unavailable"
-              : tunnel.activeCount > 0 ? tunnel.activeCount + " active tunnel" + (tunnel.activeCount === 1 ? "" : "s")
-              : tunnel.profiles.length > 0 ? "Disconnected"
-              : "No WireGuard profiles"
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            iconOpacity: tunnel.activeCount > 0 ? 1.0 : 0.55
-            iconComponent: Component {
-              Text {
-                text: tunnel.activeCount > 0 ? "\uf023" : "\uf09c"
-                color: root.foreground
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.display
+            spacing: Style.space(12)
+
+            PanelHero {
+              width: parent.width
+              title: "Omarchy Tunnel"
+              meta: !tunnel.probed ? "Checking NetworkManager…"
+                : !tunnel.available ? "NetworkManager unavailable"
+                : tunnel.activeCount > 0 ? tunnel.activeCount + " active tunnel" + (tunnel.activeCount === 1 ? "" : "s")
+                : tunnel.profiles.length > 0 ? "Disconnected"
+                : "No WireGuard profiles"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              iconOpacity: tunnel.activeCount > 0 ? 1.0 : 0.55
+              iconComponent: Component {
+                Text {
+                  text: tunnel.activeCount > 0 ? "\uf023" : "\uf09c"
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.display
+                }
               }
             }
-          }
 
-          Text {
-            visible: tunnel.actionStatus !== "" || tunnel.lastError !== ""
-            width: parent.width
-            text: tunnel.actionStatus !== "" ? tunnel.actionStatus : tunnel.lastError
-            color: tunnel.lastError !== "" && tunnel.actionStatus === "" ? root.urgent : root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-            wrapMode: Text.WordWrap
+            Text {
+              visible: tunnel.actionStatus !== "" || tunnel.lastError !== ""
+              width: parent.width
+              text: tunnel.actionStatus !== "" ? tunnel.actionStatus : tunnel.lastError
+              color: tunnel.lastError !== "" && tunnel.actionStatus === "" ? root.urgent : root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              wrapMode: Text.WordWrap
+            }
+
+            Column {
+              visible: tunnel.available && root.profiles.length > 0
+              width: parent.width
+              spacing: Style.space(6)
+
+              PanelSectionHeader {
+                text: "WIREGUARD"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+              }
+
+              Repeater {
+                model: root.profiles
+
+                ProfileRow {
+                  required property var modelData
+                  required property int index
+                  width: parent.width
+                  profile: modelData
+                  rowIndex: index
+                }
+              }
+            }
+
+            Text {
+              visible: tunnel.available && root.profiles.length === 0
+              width: parent.width
+              text: "Import a WireGuard .conf file to get started."
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              wrapMode: Text.WordWrap
+            }
+
+            PanelSeparator {
+              visible: tunnel.available
+              foreground: root.foreground
+            }
+
+            ImportRow {
+              visible: tunnel.available
+              width: parent.width
+            }
+
+            Text {
+              visible: tunnel.available
+              width: parent.width
+              text: "No passwordless sudo. Connections are managed by NetworkManager and authorized through its normal policy."
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
+            }
           }
 
           Column {
-            visible: tunnel.available && root.profiles.length > 0
+            visible: root.pickerOpen
             width: parent.width
-            spacing: Style.space(6)
+            spacing: Style.space(10)
 
-            PanelSectionHeader {
-              text: "WIREGUARD"
+            PanelHero {
+              width: parent.width
+              title: "Import WireGuard"
+              meta: "Choose a .conf or .wg file"
               foreground: root.foreground
               fontFamily: root.fontFamily
-            }
-
-            Repeater {
-              model: root.profiles
-
-              ProfileRow {
-                required property var modelData
-                required property int index
-                width: parent.width
-                profile: modelData
-                rowIndex: index
+              iconComponent: Component {
+                Text {
+                  text: "\uf07c"
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.display
+                }
               }
             }
-          }
 
-          Text {
-            visible: tunnel.available && root.profiles.length === 0
-            width: parent.width
-            text: "Import a WireGuard .conf file to get started."
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.body
-            wrapMode: Text.WordWrap
-          }
+            CursorSurface {
+              width: parent.width
+              foreground: root.foreground
+              fill: root.hoverFill
+              implicitHeight: parentInner.implicitHeight + Style.space(10)
 
-          PanelSeparator {
-            visible: tunnel.available
-            foreground: root.foreground
-          }
+              MouseArea {
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.pickerGoParent()
+              }
 
-          ImportRow {
-            visible: tunnel.available
-            width: parent.width
-          }
+              RowLayout {
+                id: parentInner
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.leftMargin: Style.space(10)
+                anchors.rightMargin: Style.space(10)
+                spacing: Style.space(8)
 
-          Text {
-            visible: tunnel.available
-            width: parent.width
-            text: "No passwordless sudo. Connections are managed by NetworkManager and authorized through its normal policy."
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            wrapMode: Text.WordWrap
+                Text {
+                  text: "\uf060"
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                }
+
+                ColumnLayout {
+                  Layout.fillWidth: true
+                  spacing: Style.space(1)
+
+                  Text {
+                    Layout.fillWidth: true
+                    text: "Parent folder"
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    elide: Text.ElideRight
+                  }
+
+                  Text {
+                    Layout.fillWidth: true
+                    text: root.pickerPathText()
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    elide: Text.ElideMiddle
+                  }
+                }
+              }
+            }
+
+            PanelSeparator {
+              foreground: root.foreground
+            }
+
+            Text {
+              visible: folderModel.status === FolderListModel.Loading
+              width: parent.width
+              text: "Loading folder…"
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+            }
+
+            Text {
+              visible: folderModel.status === FolderListModel.Ready && folderModel.count === 0
+              width: parent.width
+              text: "No WireGuard .conf or .wg files in this folder."
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              wrapMode: Text.WordWrap
+            }
+
+            Column {
+              id: pickerColumn
+              visible: folderModel.status === FolderListModel.Ready
+              width: parent.width
+              spacing: Style.space(2)
+
+              Repeater {
+                model: folderModel
+
+                PickerRow {
+                  required property string fileName
+                  required property url fileUrl
+                  required property bool fileIsDir
+                  required property int index
+                  width: parent.width
+                  entryName: fileName
+                  entryUrl: fileUrl
+                  directory: fileIsDir
+                  rowIndex: index
+                }
+              }
+            }
+
+            Text {
+              width: parent.width
+              text: "←/H parent · ↑/↓ select · Enter/→ open · Esc/Q cancel"
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
+            }
           }
         }
       }
@@ -336,7 +580,7 @@ Panel {
       enabled: !tunnel.busy
       cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
       onEntered: root.setCursor(root.actionIndex)
-      onClicked: importDialog.open()
+      onClicked: root.openPicker()
     }
 
     RowLayout {
@@ -385,7 +629,84 @@ Panel {
         fontFamily: root.fontFamily
         enabled: !tunnel.busy
         Layout.alignment: Qt.AlignVCenter
-        onClicked: importDialog.open()
+        onClicked: root.openPicker()
+      }
+    }
+  }
+
+  component PickerRow: CursorSurface {
+    id: pickerRow
+    property string entryName: ""
+    property url entryUrl: ""
+    property bool directory: false
+    property int rowIndex: 0
+
+    hasCursor: root.cursorActive && root.pickerOpen && root.pickerIndex === pickerRow.rowIndex
+    foreground: root.foreground
+    fill: root.hoverFill
+    implicitHeight: pickerInner.implicitHeight + Style.space(10)
+
+    MouseArea {
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onEntered: {
+        root.cursorActive = true
+        root.pickerIndex = pickerRow.rowIndex
+      }
+      onClicked: {
+        root.pickerIndex = pickerRow.rowIndex
+        root.pickerActivate()
+      }
+    }
+
+    RowLayout {
+      id: pickerInner
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      anchors.leftMargin: Style.space(10)
+      anchors.rightMargin: Style.space(10)
+      spacing: Style.space(8)
+
+      Text {
+        text: pickerRow.directory ? "\uf07b" : "\uf15b"
+        color: root.foreground
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.body
+        Layout.alignment: Qt.AlignVCenter
+      }
+
+      ColumnLayout {
+        Layout.fillWidth: true
+        spacing: Style.space(1)
+
+        Text {
+          Layout.fillWidth: true
+          text: pickerRow.entryName
+          color: root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.body
+          elide: Text.ElideMiddle
+        }
+
+        Text {
+          Layout.fillWidth: true
+          text: pickerRow.directory ? "Folder" : "WireGuard configuration"
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          elide: Text.ElideRight
+        }
+      }
+
+      Text {
+        visible: pickerRow.directory
+        text: "\uf054"
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        Layout.alignment: Qt.AlignVCenter
       }
     }
   }
