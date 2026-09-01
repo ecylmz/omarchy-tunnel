@@ -10,7 +10,7 @@ import qs.Ui
 
 Panel {
   id: root
-  moduleName: "io.github.ecylmz.omarchy-tunnel"
+  moduleName: "ecylmz.omarchy-tunnel"
   manageIpc: false
 
   property var anchorItem: null

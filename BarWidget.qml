@@ -4,7 +4,7 @@ import qs.Ui
 
 BarWidget {
   id: root
-  moduleName: "io.github.ecylmz.omarchy-tunnel"
+  moduleName: "ecylmz.omarchy-tunnel"
 
   readonly property bool opened: panelLoader.item
     ? panelLoader.item.opened === true
