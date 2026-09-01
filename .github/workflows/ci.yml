@@ -19,6 +19,8 @@ jobs:
         run: node -e 'const fs=require("fs"); const m=JSON.parse(fs.readFileSync("manifest.json","utf8")); const req=["schemaVersion","id","name","version","author","kinds","entryPoints"]; for (const k of req) if (m[k] === undefined) throw new Error(`missing ${k}`); if (m.id.startsWith("omarchy.")) throw new Error("reserved plugin id"); if (!m.entryPoints.barWidget) throw new Error("missing barWidget entry point"); if (!fs.existsSync(m.entryPoints.barWidget)) throw new Error("barWidget entry point not found");'
       - name: Reject repository symlinks
         run: test -z "$(find . -type l -print -quit)"
+      - name: Validate lint harness syntax
+        run: bash -n tests/lint.sh
       - name: Run model tests
         run: node tests/model.test.js
       - name: Check security invariants
