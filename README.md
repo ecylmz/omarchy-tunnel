@@ -10,6 +10,7 @@ Omarchy Tunnel is intentionally small: it does **not** install a privileged daem
 - Native in-panel browser for local WireGuard `.conf` / `.wg` files — no GTK/native file dialog and no extra picker dependency
 - Connect and disconnect profiles without opening a terminal
 - Multiple WireGuard profiles with active-state indication
+- Live active-tunnel details: profile, interface, tunnel IP, endpoint, cumulative traffic, and current receive/send rate
 - Remove inactive profiles with a two-step confirmation
 - Automatic refresh plus manual refresh with middle-click or `R`
 - Secure-by-default import hardening: autoconnect is disabled and the imported profile is restricted to the current user
@@ -27,6 +28,7 @@ Omarchy plugins run unsandboxed with the permissions of your user account, so yo
 6. **Import hardening.** After import, the plugin sets `connection.autoconnect=no` and, when `$USER` is available, `connection.permissions=user:$USER`. If this hardening step fails, the plugin attempts to delete the newly imported profile instead of leaving it behind.
 7. **Normal NetworkManager authorization.** If NetworkManager requires authorization, the regular Polkit flow is used. Omarchy Tunnel does not bypass it.
 8. **No in-process native file dialog.** Import browsing stays inside the Omarchy panel with Qt's read-only `FolderListModel`. This keeps GTK/GVFS file chooser code out of the long-running Omarchy shell process and avoids a picker failure taking down the shell.
+9. **Local-only telemetry.** Connection details are read from NetworkManager and `/sys/class/net/<interface>/statistics`. The plugin does not call public-IP, ping, analytics, or other third-party endpoints merely because the panel is open.
 
 Because NetworkManager's WireGuard import semantics differ from `wg-quick`, configs that depend on command hooks are deliberately unsupported.
 
@@ -62,6 +64,7 @@ omarchy plugin validate ~/.config/omarchy/plugins/io.github.ecylmz.omarchy-tunne
 
 - **Left-click** the lock icon to open/close the panel.
 - **Middle-click** the bar icon to refresh.
+- When a tunnel is active, the header shows the active profile, interface, tunnel IP, endpoint, total RX/TX traffic, and current RX/TX rate. Telemetry polling runs only while the panel is open.
 - Click a profile or its switch to connect/disconnect.
 - Click **Import configuration** to open the in-panel WireGuard file browser, then select a `.conf` or `.wg` file.
 - Click the remove button twice to delete an inactive profile.
@@ -117,7 +120,7 @@ omarchy-shell shell summon io.github.ecylmz.omarchy-tunnel '{}'
 omarchy-shell shell hide io.github.ecylmz.omarchy-tunnel
 ```
 
-Before a release, test click, keyboard navigation, folder navigation/import, connect/disconnect, removal, disable/re-enable, shell restart, and plugin removal.
+Before a release, test click, keyboard navigation, folder navigation/import, telemetry, connect/disconnect, removal, disable/re-enable, shell restart, and plugin removal.
 
 ## Remove
 
