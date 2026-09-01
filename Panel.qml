@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
@@ -245,10 +247,10 @@ Panel {
     id: row
     property var profile: null
     property int rowIndex: 0
-    readonly property bool rowBusy: profile && tunnel.busyUuid === profile.uuid
+    readonly property bool rowBusy: row.profile && tunnel.busyUuid === row.profile.uuid
 
-    hasCursor: root.cursorActive && root.cursorIndex === rowIndex
-    current: profile && profile.active === true
+    hasCursor: root.cursorActive && root.cursorIndex === row.rowIndex
+    current: row.profile && row.profile.active === true
     foreground: root.foreground
     fill: root.hoverFill
     currentFill: root.selectedFill
@@ -257,10 +259,10 @@ Panel {
     MouseArea {
       anchors.fill: parent
       hoverEnabled: true
-      enabled: profile && !row.rowBusy && !tunnel.importing
+      enabled: row.profile && !row.rowBusy && !tunnel.importing
       cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
       onEntered: root.setCursor(row.rowIndex)
-      onClicked: if (profile) tunnel.toggleProfile(profile.uuid)
+      onClicked: if (row.profile) tunnel.toggleProfile(row.profile.uuid)
     }
 
     RowLayout {
