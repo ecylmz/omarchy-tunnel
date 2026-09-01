@@ -80,9 +80,9 @@ Item {
 
   function parseEndpoint(raw) {
     var text = String(raw || "")
-    var match = text.match(/(?:^|[,;[:space:]])endpoint=([^,;[:space:]]+)/)
+    var match = text.match(/(?:^|[,;\s])endpoint=([^,;\s]+)/)
     if (!match || !match[1]) return ""
-    return String(match[1]).replace(/\\:/g, ":").replace(/\\\\/g, "\\")
+    return String(match[1]).replace(/\\:/g, ":")
   }
 
   function clearTelemetry() {
