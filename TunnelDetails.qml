@@ -136,8 +136,7 @@ Item {
 
   function syncProfile() {
     var next = root.profile
-    if (!root.pollingEnabled || !next || next.active !== true ||
-        !isUuid(next.uuid) || !isDevice(next.device)) {
+    if (!next || next.active !== true || !isUuid(next.uuid) || !isDevice(next.device)) {
       reset()
       return
     }
@@ -151,9 +150,19 @@ Item {
 
     if (changed) {
       clearTelemetry()
-      refreshMetadata()
-      refreshTraffic()
+      scheduleRefresh()
     }
+  }
+
+  function scheduleRefresh() {
+    // pollingEnabled, uuid and device are QML-bound values. Defer one event
+    // turn so reopening the panel cannot observe the old active binding and
+    // skip the first metadata refresh.
+    Qt.callLater(function() {
+      if (!root.pollingEnabled) return
+      root.refreshMetadata()
+      root.refreshTraffic()
+    })
   }
 
   function refreshMetadata() {
@@ -219,7 +228,10 @@ Item {
   }
 
   onProfileChanged: syncProfile()
-  onPollingEnabledChanged: syncProfile()
+  onPollingEnabledChanged: {
+    syncProfile()
+    if (pollingEnabled) scheduleRefresh()
+  }
 
   Timer {
     interval: 2000
