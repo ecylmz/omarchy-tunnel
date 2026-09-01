@@ -369,7 +369,7 @@ Panel {
             Text {
               visible: tunnel.available
               width: parent.width
-              text: "No passwordless sudo. Connections are managed by NetworkManager and authorized through its normal policy."
+              text: "No elevated helper. Connections are managed by NetworkManager and authorized through its normal policy."
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption

@@ -2,7 +2,7 @@
 
 A native Omarchy bar plugin for importing and managing WireGuard connections through NetworkManager.
 
-It works without a privileged helper, passwordless sudo, or an extra background service.
+It works without an elevated helper or an extra background service.
 
 ## Screenshots
 
