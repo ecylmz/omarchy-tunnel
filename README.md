@@ -78,17 +78,24 @@ Keyboard controls while the panel is open:
 
 ## Validate during development
 
-The official Omarchy development guide recommends validating both the manifest and QML files:
+The official Omarchy development guide recommends validating both the manifest and the QML files. Use the repository lint harness rather than invoking `qmllint` with the shell directory directly:
 
 ```sh
 PLUGIN_DIR="$HOME/.config/omarchy/plugins/io.github.ecylmz.omarchy-tunnel"
 
 omarchy plugin validate "$PLUGIN_DIR"
-qmllint -I "$OMARCHY_PATH/shell" \
-  "$PLUGIN_DIR/BarWidget.qml" \
-  "$PLUGIN_DIR/Panel.qml" \
-  "$PLUGIN_DIR/Service.qml"
+bash "$PLUGIN_DIR/tests/lint.sh"
 ```
+
+Why the helper? Omarchy exposes its shell tree under the runtime `qs.*` QML namespace. A plain `qmllint -I "$OMARCHY_PATH/shell" ...` does not create that namespace on every Quattro installation and can therefore produce cascading false diagnostics such as `Failed to import qs.Ui`, unresolved `BarWidget`/`Panel`, and inheritance-cycle warnings. The lint helper creates a temporary `qs -> <Omarchy>/shell` import root, adds `/usr/lib/qt6/qml`, and works with the packaged Omarchy 4 path (`/usr/share/omarchy`) as well as development checkouts.
+
+`qmllint` is normally installed with `qt6-declarative` but may not be on `PATH`. The helper also checks `/usr/lib/qt6/bin/qmllint`. If it is missing:
+
+```sh
+omarchy pkg add qt6-declarative
+```
+
+The helper suppresses only two known tooling-only warning classes: nested `Style.*`/`Color.*` `missing-property` diagnostics and Quickshell `Process.exited`'s unresolved `QProcess::ExitStatus`. Other warnings, especially `[unqualified]`, fail the lint run.
 
 Then exercise the panel lifecycle:
 
