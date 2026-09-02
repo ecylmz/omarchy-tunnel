@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "ecylmz.omarchy-tunnel",
   "name": "Omarchy Tunnel",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "Emre Can Yılmaz",
   "license": "MIT",
-  "description": "A native Omarchy bar panel for safely importing and managing WireGuard connections through NetworkManager.",
+  "description": "A native WireGuard VPN manager for Omarchy with secure config import, connect/disconnect controls, and live tunnel status.",
   "kinds": [
     "bar-widget"
   ],
@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "Omarchy Tunnel",
-    "description": "Import WireGuard configs and connect or disconnect them from the Omarchy bar.",
+    "description": "Manage WireGuard VPN connections, import configs, and view tunnel status from the Omarchy bar.",
     "category": "Network",
     "allowMultiple": false,
     "defaultSection": "right"

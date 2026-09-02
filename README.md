@@ -1,6 +1,6 @@
 # Omarchy Tunnel
 
-A native Omarchy bar plugin for importing and managing WireGuard connections through NetworkManager.
+A native WireGuard VPN manager for Omarchy with secure config import, connect/disconnect controls, and live tunnel status.
 
 It works without an elevated helper or an extra background service.
 
