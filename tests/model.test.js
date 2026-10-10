@@ -54,4 +54,39 @@ assert.strictEqual(tooMany.ok, false);
 assert.strictEqual(context.boundedDisplayText('<b>plain</b>', 40), '<b>plain</b>');
 assert.strictEqual(context.boundedDisplayText('a'.repeat(20), 10), 'aaaaaaa...');
 
+const splitOff = context.parseNeverDefault('no\nno\n');
+assert.strictEqual(splitOff.ok, true);
+assert.strictEqual(splitOff.split, false);
+assert.strictEqual(splitOff.v4, 'no');
+
+const splitOn = context.parseNeverDefault('yes\nyes\n');
+assert.strictEqual(splitOn.ok, true);
+assert.strictEqual(splitOn.split, true);
+
+const splitPartial = context.parseNeverDefault('yes\nno\n');
+assert.strictEqual(splitPartial.ok, true);
+assert.strictEqual(splitPartial.split, true);
+
+const splitSingle = context.parseNeverDefault('yes\n');
+assert.strictEqual(splitSingle.ok, true);
+assert.strictEqual(splitSingle.split, true);
+
+assert.strictEqual(context.parseNeverDefault('maybe\nno\n').ok, false);
+assert.strictEqual(context.parseNeverDefault('').ok, false);
+assert.strictEqual(context.parseNeverDefault('x'.repeat(65)).ok, false);
+
+const showArgs = Array.from(context.splitShowArgs(uuidA));
+assert.deepStrictEqual(showArgs, ['--get-values', 'ipv4.never-default,ipv6.never-default', 'connection', 'show', 'uuid', uuidA]);
+assert.strictEqual(context.splitShowArgs('not-a-uuid'), null);
+
+const modifyOn = Array.from(context.splitModifyArgs(uuidA, true));
+assert.ok(modifyOn.includes('ipv4.never-default'));
+assert.ok(modifyOn.includes('yes'));
+assert.ok(modifyOn.includes(uuidA));
+const modifyOff = Array.from(context.splitModifyArgs(uuidA, false));
+assert.ok(modifyOff.includes('no'));
+assert.strictEqual(context.splitModifyArgs('bad', true), null);
+assert.strictEqual(context.splitStateText(true), 'Split');
+assert.strictEqual(context.splitStateText(false), 'Full');
+
 console.log('Model tests passed');

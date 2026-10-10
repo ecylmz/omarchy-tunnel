@@ -19,6 +19,7 @@ It works without an elevated helper or an extra background service.
 
 - Import local WireGuard `.conf` and `.wg` files from the built-in browser
 - Connect, disconnect, and remove NetworkManager WireGuard profiles
+- Toggle split tunneling per profile (skip the default route, keep LAN direct)
 - View the active interface, tunnel IP, endpoint, traffic totals, and transfer rates
 - Manage multiple profiles with mouse or keyboard controls
 - Keep imported profiles user-scoped with autoconnect disabled
@@ -41,11 +42,13 @@ omarchy plugin add https://github.com/ecylmz/omarchy-tunnel.git --enable
 ## Usage
 
 - Left-click the lock icon to open the panel.
-- Select a profile or its switch to connect or disconnect.
+- Each profile row has two toggles: **Connection** to connect or disconnect, and **Split** for split tunneling (only the VPN subnets go through the tunnel, the rest stays direct). Reconnect an active profile to apply a split change.
 - Choose **Import configuration** to add a `.conf` or `.wg` file.
 - Click the remove button twice to delete an inactive profile.
 
-Use the arrow keys to navigate, `Enter` to select, `I` to import, `R` to refresh, `D` to remove, and `Esc` to close.
+Use the arrow keys to navigate, `Enter` to select, `I` to import, `R` to refresh, `S` to toggle split tunneling, `D` to remove, and `Esc` to close.
+
+Split tunneling sets `ipv4.never-default` and `ipv6.never-default` on the NetworkManager profile: `yes` keeps the default route off the VPN (split), `no` sends all traffic through the VPN (full tunnel).
 
 ## Security
 

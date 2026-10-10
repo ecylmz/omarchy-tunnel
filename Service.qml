@@ -16,6 +16,9 @@ Item {
   property string lastError: ""
   property string pendingImportPath: ""
   property bool importing: false
+  property var splitTunnel: ({})
+  property var splitQueue: []
+  property string splitQueryUuid: ""
 
   readonly property string helperPath: localPath(Qt.resolvedUrl("scripts/omarchy-tunnel-helper.py"))
   readonly property int activeCount: {
@@ -112,6 +115,77 @@ Item {
       return
     }
     runProfileAction("delete", uuid)
+  }
+
+  function isSplit(uuid) {
+    return root.splitTunnel[uuid] === true
+  }
+
+  function pruneSplitStates() {
+    var next = {}
+    for (var i = 0; i < profiles.length; i++) {
+      var uuid = profiles[i].uuid
+      if (root.splitTunnel[uuid] === true || root.splitTunnel[uuid] === false) next[uuid] = root.splitTunnel[uuid]
+    }
+    var before = JSON.stringify(root.splitTunnel)
+    root.splitTunnel = next
+    if (JSON.stringify(next) !== before) root.splitTunnelChanged()
+  }
+
+  function refreshSplitStates() {
+    pruneSplitStates()
+    var queue = []
+    for (var i = 0; i < profiles.length; i++) {
+      var uuid = profiles[i].uuid
+      if (!Model.isUuid(uuid)) continue
+      if (root.splitTunnel[uuid] !== true && root.splitTunnel[uuid] !== false) queue.push(uuid)
+    }
+    root.splitQueue = queue
+    pumpSplitQueue()
+  }
+
+  function querySplitState(uuid) {
+    if (!Model.isUuid(uuid)) return
+    if (root.splitQueryUuid !== "") return
+    var args = Model.splitShowArgs(uuid)
+    if (!args) return
+    splitQueryProcess.timedOut = false
+    splitQueryProcess.awaitingExit = true
+    splitQueryProcess.requestUuid = uuid
+    root.splitQueryUuid = uuid
+    splitQueryProcess.command = nmcli(args, 5000, 64, 2048)
+    splitQueryProcess.running = true
+  }
+
+  function pumpSplitQueue() {
+    if (splitQueryProcess.running || root.splitQueryUuid !== "") return
+    while (root.splitQueue.length > 0) {
+      var uuid = root.splitQueue.shift()
+      if (!Model.isUuid(uuid)) continue
+      if (root.splitTunnel[uuid] === true || root.splitTunnel[uuid] === false) continue
+      if (!profileByUuid(uuid)) continue
+      querySplitState(uuid)
+      return
+    }
+    root.splitQueue = []
+  }
+
+  function setSplitTunnel(uuid, enabled) {
+    var profile = profileByUuid(uuid)
+    if (!profile || !Model.isUuid(uuid) || actionProcess.running || importing) return
+    var args = Model.splitModifyArgs(uuid, enabled === true)
+    if (!args) {
+      fail("Invalid split tunneling request")
+      return
+    }
+    actionKind = enabled ? "split-on" : "split-off"
+    busyUuid = uuid
+    lastError = ""
+    actionStatus = enabled ? "Enabling split tunneling…" : "Disabling split tunneling…"
+    actionProcess.timedOut = false
+    actionProcess.awaitingExit = true
+    actionProcess.command = nmcli(args, 12000, 4096, 4096)
+    actionProcess.running = true
   }
 
   function localPath(fileUrl) {
@@ -214,6 +288,19 @@ Item {
     }
   }
 
+  Timer {
+    interval: 8000
+    repeat: false
+    running: splitQueryProcess.running
+    onTriggered: {
+      splitQueryProcess.timedOut = true
+      splitQueryProcess.awaitingExit = false
+      splitQueryProcess.running = false
+      root.splitQueryUuid = ""
+      root.pumpSplitQueue()
+    }
+  }
+
   Process {
     id: refreshProcess
     property bool timedOut: false
@@ -254,6 +341,7 @@ Item {
       root.available = true
       root.lastError = ""
       root.profiles = parsed.profiles
+      root.refreshSplitStates()
     }
   }
 
@@ -277,11 +365,23 @@ Item {
     onExited: function(exitCode) {
       awaitingExit = false
       if (timedOut) return
+      var kind = root.actionKind
+      var uuid = root.busyUuid
       if (exitCode !== 0) {
         root.fail(Model.cleanError(actionStderr.text || actionStdout.text, "NetworkManager operation failed"))
+      } else if (kind === "split-on" || kind === "split-off") {
+        var enabled = kind === "split-on"
+        var updated = {}
+        for (var key in root.splitTunnel) updated[key] = root.splitTunnel[key]
+        updated[uuid] = enabled
+        root.splitTunnel = updated
+        root.lastError = ""
+        var profile = root.profileByUuid(uuid)
+        if (profile && profile.active) root.flash(enabled ? "Split tunneling on — reconnect to apply" : "Full tunnel restored — reconnect to apply")
+        else root.flash(enabled ? "Split tunneling enabled" : "Full tunnel restored")
       } else {
         root.lastError = ""
-        root.flash(root.actionKind === "up" ? "Connected" : root.actionKind === "down" ? "Disconnected" : "Profile removed")
+        root.flash(kind === "up" ? "Connected" : kind === "down" ? "Disconnected" : "Profile removed")
       }
       root.busyUuid = ""
       root.actionKind = ""
@@ -319,6 +419,39 @@ Item {
       root.lastError = ""
       root.flash("WireGuard profile imported")
       delayedRefresh.restart()
+    }
+  }
+
+  Process {
+    id: splitQueryProcess
+    property bool timedOut: false
+    property bool awaitingExit: false
+    property string requestUuid: ""
+    running: false
+    command: []
+    stdout: StdioCollector { id: splitQueryStdout; waitForEnd: true }
+    stderr: StdioCollector { id: splitQueryStderr; waitForEnd: true }
+    onRunningChanged: if (!running && awaitingExit) Qt.callLater(function() {
+      if (!splitQueryProcess.running && splitQueryProcess.awaitingExit) {
+        splitQueryProcess.awaitingExit = false
+        if (root.splitQueryUuid === splitQueryProcess.requestUuid) root.splitQueryUuid = ""
+        root.pumpSplitQueue()
+      }
+    })
+    onExited: function(exitCode) {
+      awaitingExit = false
+      var uuid = requestUuid
+      if (root.splitQueryUuid === uuid) root.splitQueryUuid = ""
+      if (!timedOut && exitCode === 0 && Model.isUuid(uuid)) {
+        var parsed = Model.parseNeverDefault(splitQueryStdout.text)
+        if (parsed.ok) {
+          var updated = {}
+          for (var key in root.splitTunnel) updated[key] = root.splitTunnel[key]
+          updated[uuid] = parsed.split
+          root.splitTunnel = updated
+        }
+      }
+      root.pumpSplitQueue()
     }
   }
 }

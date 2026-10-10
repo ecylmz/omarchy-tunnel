@@ -96,3 +96,41 @@ function cleanError(raw, fallback) {
   var last = boundedDisplayText(lines[lines.length - 1], 180);
   return last || fallback || "Operation failed";
 }
+
+function parseNeverDefault(raw) {
+  var text = String(raw || "");
+  if (text.length > 64) {
+    return { ok: false, split: false, v4: "", v6: "" };
+  }
+  var lines = [];
+  var parts = text.split(/\r?\n/);
+  for (var i = 0; i < parts.length; i++) {
+    var value = parts[i].trim().toLowerCase();
+    if (value === "") continue;
+    if (value !== "yes" && value !== "no") {
+      return { ok: false, split: false, v4: "", v6: "" };
+    }
+    lines.push(value);
+  }
+  if (lines.length === 0 || lines.length > 2) {
+    return { ok: false, split: false, v4: "", v6: "" };
+  }
+  var v4 = lines[0];
+  var v6 = lines.length > 1 ? lines[1] : lines[0];
+  return { ok: true, split: v4 === "yes" || v6 === "yes", v4: v4, v6: v6 };
+}
+
+function splitShowArgs(uuid) {
+  if (!isUuid(uuid)) return null;
+  return ["--get-values", "ipv4.never-default,ipv6.never-default", "connection", "show", "uuid", uuid];
+}
+
+function splitModifyArgs(uuid, enabled) {
+  if (!isUuid(uuid)) return null;
+  var value = enabled ? "yes" : "no";
+  return ["--wait", "8", "connection", "modify", "uuid", uuid, "ipv4.never-default", value, "ipv6.never-default", value];
+}
+
+function splitStateText(split) {
+  return split ? "Split" : "Full";
+}

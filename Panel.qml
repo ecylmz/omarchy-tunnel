@@ -38,6 +38,10 @@ Panel {
     }
     return null
   }
+  readonly property var cursorProfile: {
+    if (cursorIndex >= 0 && cursorIndex < profiles.length) return profiles[cursorIndex]
+    return null
+  }
 
   function open() {
     root.controller.show()
@@ -175,6 +179,16 @@ Panel {
     }
   }
 
+  function toggleSplit(uuid) {
+    var profile = tunnel.profileByUuid(uuid)
+    if (!profile || tunnel.busy) return
+    tunnel.setSplitTunnel(uuid, !tunnel.isSplit(uuid))
+  }
+
+  function toggleCursorSplit() {
+    if (root.cursorProfile) toggleSplit(root.cursorProfile.uuid)
+  }
+
   onOpenedChanged: if (opened) {
     cursorActive = false
     cursorIndex = 0
@@ -257,6 +271,7 @@ Panel {
         }
         if (t === "i" || t === "I") root.openPicker()
         else if (t === "r" || t === "R") tunnel.refresh()
+        else if (t === "s" || t === "S") root.toggleCursorSplit()
         else if ((t === "d" || t === "D") && root.cursorIndex < root.profiles.length) {
           var profile = root.profiles[root.cursorIndex]
           if (profile) root.requestDelete(profile.uuid)
@@ -579,9 +594,9 @@ Panel {
           textFormat: Text.PlainText
           Layout.fillWidth: true
           text: !row.profile ? ""
-            : row.rowBusy ? (tunnel.actionKind === "up" ? "Connecting…" : tunnel.actionKind === "down" ? "Disconnecting…" : "Removing…")
-            : row.profile.active ? "Connected" + (row.profile.device ? " · " + row.profile.device : "")
-            : "Disconnected"
+            : row.rowBusy ? (tunnel.actionKind === "up" ? "Connecting…" : tunnel.actionKind === "down" ? "Disconnecting…" : tunnel.actionKind === "split-on" ? "Enabling split…" : tunnel.actionKind === "split-off" ? "Disabling split…" : "Removing…")
+            : row.profile.active ? "Connected" + (row.profile.device ? " · " + row.profile.device : "") + (tunnel.isSplit(row.profile.uuid) ? " · Split" : "")
+            : tunnel.isSplit(row.profile.uuid) ? "Disconnected · Split" : "Disconnected"
           color: root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
@@ -599,14 +614,52 @@ Panel {
         onClicked: if (row.profile) root.requestDelete(row.profile.uuid)
       }
 
-      ToggleSwitch {
-        checked: row.profile ? row.profile.active : false
-        busy: row.rowBusy
-        foreground: root.foreground
-        enabled: row.profile && !tunnel.importing
+      ColumnLayout {
         Layout.alignment: Qt.AlignVCenter
-        onHovered: function(on) { if (on) root.setCursor(row.rowIndex) }
-        onToggled: if (row.profile) tunnel.toggleProfile(row.profile.uuid)
+        spacing: Style.space(1)
+
+        Text {
+          textFormat: Text.PlainText
+          Layout.alignment: Qt.AlignHCenter
+          text: "Connection"
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+
+        ToggleSwitch {
+          checked: row.profile ? row.profile.active : false
+          busy: row.rowBusy
+          foreground: root.foreground
+          enabled: row.profile && !tunnel.importing
+          Layout.alignment: Qt.AlignHCenter
+          onHovered: function(on) { if (on) root.setCursor(row.rowIndex) }
+          onToggled: if (row.profile) tunnel.toggleProfile(row.profile.uuid)
+        }
+      }
+
+      ColumnLayout {
+        Layout.alignment: Qt.AlignVCenter
+        spacing: Style.space(1)
+
+        Text {
+          textFormat: Text.PlainText
+          Layout.alignment: Qt.AlignHCenter
+          text: "Split"
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+
+        ToggleSwitch {
+          checked: row.profile ? tunnel.isSplit(row.profile.uuid) : false
+          busy: row.profile ? (tunnel.busyUuid === row.profile.uuid && (tunnel.actionKind === "split-on" || tunnel.actionKind === "split-off")) : false
+          foreground: root.foreground
+          enabled: row.profile && !tunnel.importing
+          Layout.alignment: Qt.AlignHCenter
+          onHovered: function(on) { if (on) root.setCursor(row.rowIndex) }
+          onToggled: if (row.profile) root.toggleSplit(row.profile.uuid)
+        }
       }
     }
   }
